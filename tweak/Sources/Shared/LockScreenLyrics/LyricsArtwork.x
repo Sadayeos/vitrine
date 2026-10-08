@@ -4,6 +4,7 @@
 // screen off cost nothing. It rides on Spotify's now playing info as an extra (NowPlayingExtras.h), like
 // the moving artwork it takes the place of.
 #import <MediaPlayer/MediaPlayer.h>
+#import <objc/message.h>
 #import "Core/SGCore.h"
 #import "SGLyricsClip.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
@@ -24,6 +25,18 @@ static NSObject *sg_lock;
 static dispatch_queue_t sg_queue;   // writes the clips, one at a time
 // Draws the previews, apart from the clips: one waiting behind a clip that takes seconds left the lock screen blank.
 static dispatch_queue_t sg_previewQueue;
+
+static NSString *key3x4(void) {
+    return @"MPNowPlayingInfoProperty3x4AnimatedArtwork";
+}
+
+static id supportedAnimatedKeys(void) {
+    SEL sel = NSSelectorFromString(@"supportedAnimatedArtworkKeys");
+    if ([MPNowPlayingInfoCenter respondsToSelector:sel]) {
+        return ((id (*)(id, SEL))objc_msgSend)([MPNowPlayingInfoCenter class], sel);
+    }
+    return nil;
+}
 
 static NSURL *folder(void) {
     NSURL *caches = [NSFileManager.defaultManager URLsForDirectory:NSCachesDirectory inDomains:NSUserDomainMask].firstObject;
@@ -105,36 +118,41 @@ static void drawAhead(NSString *artworkID, NSString *line, NSString *next, UIIma
     if (time - sg_askedAt <= 15) dispatch_async(sg_queue, ^{ writeClip(artworkID, line, next, cover, style, size); });
 }
 
-API_AVAILABLE(ios(26.0))
-static MPMediaItemAnimatedArtwork *artworkFor(NSString *artworkID, NSString *line, NSString *next, UIImage *cover,
-                                              SGLyricsClipStyle style) {
+static id artworkFor(NSString *artworkID, NSString *line, NSString *next, UIImage *cover, SGLyricsClipStyle style) {
     CGSize size = SGLyricsClipSize(SGMotionPixels());
-    return [[MPMediaItemAnimatedArtwork alloc] initWithArtworkID:artworkID
-        previewImageRequestHandler:^(CGSize wanted, void (^completion)(UIImage *)) {
-            sg_previewAskedAt = CFAbsoluteTimeGetCurrent();
-            // One drawn ahead is handed over at once, as Apple asks of a preview; only a miss waits for drawing.
-            UIImage *ready = [sg_previews objectForKey:artworkID];
-            if (ready) {
-                completion(ready);
+    Class artworkClass = NSClassFromString(@"MPMediaItemAnimatedArtwork");
+    if (!artworkClass) return nil;
+    SEL initSel = NSSelectorFromString(@"initWithArtworkID:previewImageRequestHandler:videoAssetFileURLRequestHandler:");
+    if (![artworkClass instancesRespondToSelector:initSel]) return nil;
+
+    id alloced = ((id (*)(id, SEL))objc_msgSend)(artworkClass, @selector(alloc));
+
+    id previewBlock = ^(CGSize wanted, void (^completion)(UIImage *)) {
+        sg_previewAskedAt = CFAbsoluteTimeGetCurrent();
+        UIImage *ready = [sg_previews objectForKey:artworkID];
+        if (ready) {
+            completion(ready);
+            return;
+        }
+        dispatch_async(sg_previewQueue, ^{
+            completion(previewFor(artworkID, line, next, cover, size));
+            static NSUInteger told;
+            if (told++ < 10) SGLog(@"lock lyrics: preview of %@ was not drawn ahead", artworkID);
+        });
+    };
+
+    id videoBlock = ^(CGSize wanted, void (^completion)(NSURL *)) {
+        sg_askedAt = CFAbsoluteTimeGetCurrent();
+        dispatch_async(sg_queue, ^{
+            if (!stillShown(artworkID)) {
+                completion(nil);
                 return;
             }
-            dispatch_async(sg_previewQueue, ^{
-                completion(previewFor(artworkID, line, next, cover, size));
-                static NSUInteger told;
-                if (told++ < 10) SGLog(@"lock lyrics: preview of %@ was not drawn ahead", artworkID);
-            });
-        }
-        videoAssetFileURLRequestHandler:^(CGSize wanted, void (^completion)(NSURL *)) {
-            sg_askedAt = CFAbsoluteTimeGetCurrent();
-            dispatch_async(sg_queue, ^{
-                // A line already sung by the time its turn comes is not drawn.
-                if (!stillShown(artworkID)) {
-                    completion(nil);
-                    return;
-                }
-                completion(writeClip(artworkID, line, next, cover, style, size) ? clipFile(artworkID) : nil);
-            });
-        }];
+            completion(writeClip(artworkID, line, next, cover, style, size) ? clipFile(artworkID) : nil);
+        });
+    };
+
+    return ((id (*)(id, SEL, id, id, id))objc_msgSend)(alloced, initSel, artworkID, previewBlock, videoBlock);
 }
 
 static void clear(void) {
@@ -197,8 +215,10 @@ static void tick(void) {
         NSString *line = resting ? nil : textAt(lines, index), *next = textAt(lines, index + 1);
         if (![sg_shownID hasPrefix:trackID]) SGLog(@"lock lyrics: lines offered for %@", trackID);
         setShown(artworkID);
-        SGNowPlayingSetExtras(@"lyrics", @{MPNowPlayingInfoProperty3x4AnimatedArtwork: artworkFor(artworkID, line, next, sg_cover, style)},
-                              state.track.trackTitle);
+        id art = artworkFor(artworkID, line, next, sg_cover, style);
+        if (art) {
+            SGNowPlayingSetExtras(@"lyrics", @{key3x4(): art}, state.track.trackTitle);
+        }
         if (index + 1 < (NSInteger)lines.count) {
             NSString *ahead = [NSString stringWithFormat:@"%@-%ld-%ld", trackID, (long)index + 1, (long)style];
             drawAhead(ahead, textAt(lines, index + 1), textAt(lines, index + 2), sg_cover, style);
@@ -255,6 +275,6 @@ static void setTicking(BOOL on) {
             });
         }];
         SGLog(@"lock lyrics: %@, the lock screen takes %@", choice == SGLockArtworkLyrics ? @"on" : @"off",
-              MPNowPlayingInfoCenter.supportedAnimatedArtworkKeys);
+              supportedAnimatedKeys());
     }
 }
