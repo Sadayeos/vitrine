@@ -196,3 +196,14 @@ public final class SGOnDeviceTranslation: NSObject {
         let answer = try await session.respond(to: prompt, schema: schema, options: options).content.value([String].self)
         return answer.count == lines.count ? answer : lines.indices.map { $0 < answer.count ? answer[$0] : "" }
     }
+#else
+    @objc public static func appleIntelligenceAvailable(_ languageTag: String) -> Bool {
+        return false
+    }
+
+    @objc public static func translateWithAppleIntelligence(_ lines: [String], to languageTag: String, song: String?, progress: @escaping ([String]) -> Void,
+                                                           done: @escaping ([String]?, String?) -> Void) {
+        finish(done, nil, "Apple Intelligence is not available on this build SDK.")
+    }
+#endif
+}
