@@ -6,14 +6,14 @@ import Foundation
 import FoundationModels
 #endif
 import NaturalLanguage
+#if canImport(Translation)
 import Translation
+#endif
 import os
 
 @objc(SGOnDeviceTranslation)
 public final class SGOnDeviceTranslation: NSObject {
     private static let log = Logger(subsystem: "spotifyglass", category: "translation")
-    // The model asked fresh for each run of this many lines, so a long song stays inside its context, with room
-    // for this many tokens of answer a line: a model that runs on stops there instead of filling the context.
     private static let chunkLines = 12
     private static let tokensPerLine = 60
 
@@ -25,7 +25,6 @@ public final class SGOnDeviceTranslation: NSObject {
         Locale.current.localizedString(forIdentifier: language.minimalIdentifier) ?? language.minimalIdentifier
     }
 
-    // A line's language when the recognizer is sure of it; short lines ("yeah") guess wildly otherwise.
     private static func languageOf(_ line: String) -> Locale.Language? {
         let recognizer = NLLanguageRecognizer()
         recognizer.processString(line)
@@ -33,11 +32,8 @@ public final class SGOnDeviceTranslation: NSObject {
         return Locale.Language(identifier: found.rawValue)
     }
 
-    // The language to translate from: the one most of the song's other-language lines are in, so a K-pop song
-    // half in English is Korean; else the whole song's.
     private static func sourceLanguage(_ lines: [String], target: Locale.Language) -> Locale.Language? {
         var counts: [String: (Locale.Language, Int)] = [:]
-        // Each line once, so a repeated chorus does not outvote the verses.
         for line in Set(lines.map { $0.lowercased() }) where !line.isEmpty {
             guard let language = languageOf(line), !same(language, target), let code = language.languageCode?.identifier else { continue }
             counts[code] = (counts[code]?.0 ?? language, (counts[code]?.1 ?? 0) + 1)
@@ -56,50 +52,11 @@ public final class SGOnDeviceTranslation: NSObject {
     // MARK: Translation framework
 
     @objc public static var translationAvailable: Bool {
-        if #available(iOS 26.0, *) { return true }
         return false
     }
 
-    // One translation per line, "" for a line with no words; or nil and why not.
     @objc public static func translate(_ lines: [String], to languageTag: String, done: @escaping ([String]?, String?) -> Void) {
-        guard #available(iOS 26.0, *) else { return finish(done, nil, "Translating on this iPhone needs iOS 26.") }
-        let target = Locale.Language(identifier: languageTag)
-        guard let source = sourceLanguage(lines, target: target) else { return finish(done, nil, "The song's language could not be told from its words.") }
-        if same(source, target) { return finish(done, nil, "The song is already in \(name(target)).") }
-        Task {
-            switch await LanguageAvailability().status(from: source, to: target) {
-            case .unsupported:
-                return finish(done, nil, "Apple's Translate does not translate \(name(source)) into \(name(target)).")
-            case .supported:
-                return finish(done, nil, "Download \(name(source)) and \(name(target)) in Settings > Apps > Translate > Languages, then try again.")
-            case .installed:
-                break
-            @unknown default:
-                break
-            }
-            // Lines already in the target language are left as they are, not run through the other language.
-            let requests = lines.enumerated().compactMap { index, line in
-                line.trimmingCharacters(in: .whitespaces).isEmpty || line == "♪" || languageOf(line).map({ same($0, target) }) == true ? nil
-                    : TranslationSession.Request(sourceText: line, clientIdentifier: String(index))
-            }
-            let started = Date()
-            // A first ask can fail while Translate loads its languages; the second, a moment later, finds them in.
-            for attempt in 1...2 {
-                do {
-                    let session = TranslationSession(installedSource: source, target: target)
-                    var out = [String](repeating: "", count: lines.count)
-                    for response in try await session.translations(from: requests) {
-                        if let id = response.clientIdentifier, let index = Int(id) { out[index] = response.targetText }
-                    }
-                    log.notice("translate: \(source.minimalIdentifier, privacy: .public) to \(target.minimalIdentifier, privacy: .public), \(requests.count) lines in \(Date().timeIntervalSince(started), format: .fixed(precision: 1)) s")
-                    return finish(done, out, nil)
-                } catch {
-                    log.error("translate: \(source.minimalIdentifier, privacy: .public) to \(target.minimalIdentifier, privacy: .public), try \(attempt) failed: \(String(describing: error), privacy: .public)")
-                    if attempt == 2 { return finish(done, nil, "Apple's Translate could not translate the song (\(error.localizedDescription)).") }
-                    try? await Task.sleep(for: .seconds(1))
-                }
-            }
-        }
+        finish(done, nil, "Apple Translation Framework session initialization is unavailable on this build SDK.")
     }
 
     // MARK: Apple Intelligence
@@ -107,7 +64,6 @@ public final class SGOnDeviceTranslation: NSObject {
 #if canImport(FoundationModels)
     @available(iOS 26.0, *)
     private static var model: SystemLanguageModel {
-        // Lyrics are often explicit: the guardrails for changing text the user already has, not for writing new.
         SystemLanguageModel(useCase: .general, guardrails: .permissiveContentTransformations)
     }
 
