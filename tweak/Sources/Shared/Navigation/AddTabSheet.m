@@ -6,7 +6,6 @@
 #import <MediaPlayer/MediaPlayer.h>
 #import <objc/message.h>
 #import "Core/SGCore.h"
-#import "SGLyricsClip.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/Player/NowPlayingExtras.h"
