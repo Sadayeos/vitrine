@@ -3,6 +3,7 @@
 // in a sheet that rests at half height without dimming the page, so the preview shows every change as
 // it is made. The rest of the page is App/Pages.m's sections, under them.
 #import "Core/SGCore.h"
+#import <objc/message.h>
 #import "Settings/SGModPage.h"
 #import "Settings/SGPageStyle.h"
 #import "Redesigned/Kit/SGRTokens.h"
