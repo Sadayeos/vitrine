@@ -54,6 +54,6 @@ static void soften(UIScrollView *scrollView) {
 %end
 
 %ctor {
-    if (!SGRedesignUI()) return;
+    if (!SGRedesignedUI()) return;
     %init;
 }
