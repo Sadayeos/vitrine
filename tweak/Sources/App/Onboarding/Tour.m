@@ -1,6 +1,7 @@
 #import "Core/SGCore.h"
 #import "Settings/SGPageStyle.h"
 #import "Onboarding.h"
+#import <objc/message.h>
 #import "App/About/About.h"
 #import "App/Pages.h"
 
