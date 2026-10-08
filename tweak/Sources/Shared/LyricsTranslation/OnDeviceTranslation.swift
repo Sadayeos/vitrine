@@ -2,7 +2,9 @@
 // framework (iOS 26, with the languages downloaded in the Translate app) and Apple Intelligence's language
 // model (iOS 26, on the iPhones that have it). Both are Swift only. Nothing leaves the phone.
 import Foundation
+#if canImport(FoundationModels)
 import FoundationModels
+#endif
 import NaturalLanguage
 import Translation
 import os
@@ -102,6 +104,7 @@ public final class SGOnDeviceTranslation: NSObject {
 
     // MARK: Apple Intelligence
 
+#if canImport(FoundationModels)
     @available(iOS 26.0, *)
     private static var model: SystemLanguageModel {
         // Lyrics are often explicit: the guardrails for changing text the user already has, not for writing new.
@@ -115,15 +118,13 @@ public final class SGOnDeviceTranslation: NSObject {
     }
 
     @objc public static func translateWithAppleIntelligence(_ lines: [String], to languageTag: String, song: String?, progress: @escaping ([String]) -> Void,
-                                                            done: @escaping ([String]?, String?) -> Void) {
+                                                           done: @escaping ([String]?, String?) -> Void) {
         guard #available(iOS 26.0, *) else { return finish(done, nil, "Apple Intelligence needs iOS 26.") }
         let language = name(Locale.Language(identifier: languageTag))
-        // Only the lines given text ("" for those translated already or with no words), 12 to a batch. A batch
-        // the model refuses or fails is left out and the rest go on, so an explicit verse costs its own lines only.
         let wanted = lines.indices.filter { !lines[$0].isEmpty }
         Task {
             var out = [String](repeating: "", count: lines.count)
-            var before: [(String, String)] = []   // the batch just done, lines and translations, for the next one's sense
+            var before: [(String, String)] = []
             var failure: Error?
             var translated = 0
             let started = Date()
@@ -150,8 +151,6 @@ public final class SGOnDeviceTranslation: NSObject {
         }
     }
 
-    // iOS 27 throws LanguageModelError, iOS 26 the session's GenerationError. The first is only in the iOS 27 SDK
-    // (Swift 6.4), and the release build has the iOS 26 one; GenerationOptions' sampling: label is in both.
     @available(iOS 26.0, *)
     private static func problem(_ error: Error) -> String {
         let declined = "Apple Intelligence declined to translate this song's lyrics."
@@ -178,9 +177,6 @@ public final class SGOnDeviceTranslation: NSObject {
         return "Apple Intelligence could not translate the song (\(error.localizedDescription))."
     }
 
-    // Exactly one string per line, held to the count by the schema rather than read out of free text. The batch
-    // before it comes along, already translated, so a sentence across the two reads as one and names, pronouns
-    // and tone stay as they were; it is context only and gets no answer.
     @available(iOS 26.0, *)
     private static func translateChunk(_ lines: [String], into language: String, song: String?, before: [(String, String)]) async throws -> [String] {
         let session = LanguageModelSession(model: model, instructions: """
@@ -192,7 +188,7 @@ public final class SGOnDeviceTranslation: NSObject {
             """)
         let line = DynamicGenerationSchema(type: String.self)
         let schema = try GenerationSchema(root: DynamicGenerationSchema(arrayOf: line, minimumElements: lines.count, maximumElements: lines.count),
-                                          dependencies: [])
+                                           dependencies: [])
         let json = { (value: Any) in String(decoding: (try? JSONSerialization.data(withJSONObject: value)) ?? Data(), as: UTF8.self) }
         let prompt = before.isEmpty ? json(lines)
             : "Just before, already translated: \(json(before.map { [$0.0, $0.1] }))\n\nTranslate: \(json(lines))"
@@ -200,4 +196,3 @@ public final class SGOnDeviceTranslation: NSObject {
         let answer = try await session.respond(to: prompt, schema: schema, options: options).content.value([String].self)
         return answer.count == lines.count ? answer : lines.indices.map { $0 < answer.count ? answer[$0] : "" }
     }
-}
