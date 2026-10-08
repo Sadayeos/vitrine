@@ -9,7 +9,7 @@
 #import "LyricsTranslation.h"
 
 // gemini-flash-latest follows each Flash release; Google gives two weeks' notice of a breaking change.
-static NSString *const kEndpoint = @"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent";
+static NSString *const kEndpoint = @"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
 static NSString *const kService = @"Vitrine.Gemini", *const kAccount = @"api-key";
 
 #pragma mark - the key
