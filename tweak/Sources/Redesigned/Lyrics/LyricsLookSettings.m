@@ -130,12 +130,19 @@ static UIColor *readableOn(UIColor *color) {
 }
 
 static UIButtonConfiguration *chipConfiguration(NSString *title, NSString *symbol, BOOL chosen) {
-    UIButtonConfiguration *config;
+    UIButtonConfiguration *config = nil;
     if (@available(iOS 26.0, *)) {
-        config = chosen ? [UIButtonConfiguration prominentGlassButtonConfiguration] : [UIButtonConfiguration glassButtonConfiguration];
-    } else {
+        Class btnConfigClass = [UIButtonConfiguration class];
+        SEL sel = NSSelectorFromString(chosen ? @"prominentGlassButtonConfiguration" : @"glassButtonConfiguration");
+        if ([btnConfigClass respondsToSelector:sel]) {
+            config = ((id (*)(id, SEL))objc_msgSend)(btnConfigClass, sel);
+        }
+    }
+    
+    if (!config) {
         config = chosen ? [UIButtonConfiguration filledButtonConfiguration] : [UIButtonConfiguration grayButtonConfiguration];
     }
+    
     config.cornerStyle = UIButtonConfigurationCornerStyleCapsule;
     if (chosen) config.baseBackgroundColor = SGRAccent();
     config.baseForegroundColor = chosen ? readableOn(SGRAccent()) : UIColor.whiteColor;
