@@ -74,6 +74,16 @@ static BOOL isPlayerMenu(UIViewController *menu) {
     return ours;
 }
 
+#pragma mark - Funciones Exportadas (Declaradas en SpeedPitch.h)
+
+void SGPlayerMenuMarkPlayers(void) {
+    sg_moreTappedAt = CACurrentMediaTime();
+}
+
+BOOL SGPlayerMenuIsPlayers(UIViewController *menu) {
+    return isPlayerMenu(menu);
+}
+
 static UITableView *findTable(UIView *root, int depth) {
     if ([root isKindOfClass:UITableView.class]) return (UITableView *)root;
     if (depth > 5) return nil;
