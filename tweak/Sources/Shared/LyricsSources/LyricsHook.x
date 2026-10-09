@@ -336,15 +336,6 @@ static SGLyricsTaskState *classify(NSURLSessionTask *task, NSURLResponse *respon
     return state;
 }
 
-static NSData *noLyricsPlaceholderBody(SGLyricsResult *chain) {
-    SGLyricsResult *placeholder = [SGLyricsResult new];
-    placeholder.texts = @[@"Without lyrics."];
-    placeholder.starts = @[@0];
-    placeholder.synced = NO;
-    placeholder.provider = @"Vitrine";
-    return pageBody(placeholder, nil);
-}
-
 // A donor 200 goes through only with lines to put in it: once Spotify has seen a 200 it cannot be
 // turned into "no lyrics", and the donor's own lines must never show.
 static void answerDonor(NSURLSessionDataTask *task, SGLyricsTaskState *state, SGLyricsResult *chain,
