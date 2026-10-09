@@ -18,6 +18,10 @@ static const CGFloat kRowHeight = 56, kSliderBlockHeight = 72, kSwitchRowHeight 
 static const CGFloat kSideMargin = 16, kGrid = 8;
 static const NSTimeInterval kOpenDuration = 0.45;
 
+static NSTimeInterval sg_moreTappedAt;
+static BOOL sg_open;
+static char kBlockKey, kDecidedKey, kWatchedKey, kShownAtKey, kRowsInKey;
+
 static UIColor *primary(void) {
     return UIColor.whiteColor;
 }
@@ -56,9 +60,76 @@ static const float kMinSpeed = 0.5f, kMaxSpeed = 2, kSpeedStep = 0.05f;
 static const float kMaxPitch = 12;
 static const NSTimeInterval kSpeedInterval = 0.05;
 
-static NSTimeInterval sg_moreTappedAt;
-static BOOL sg_open;
-static char kBlockKey, kDecidedKey, kWatchedKey, kShownAtKey, kRowsInKey;
+#pragma mark - Helper de comprobación e inspección de menú
+
+static BOOL isPlayerMenu(UIViewController *menu) {
+    NSNumber *decided = objc_getAssociatedObject(menu, &kDecidedKey);
+    if (decided) return decided.boolValue;
+    BOOL ours = sg_moreTappedAt && CACurrentMediaTime() - sg_moreTappedAt < kMenuAfterTap;
+    if (ours) sg_moreTappedAt = 0;
+    objc_setAssociatedObject(menu, &kDecidedKey, @(ours), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    UIViewController *presenter = menu.navigationController.presentingViewController ?: menu.presentingViewController;
+    SGLog(@"speed and pitch: a context menu, %@ (tapped %d, presented by %@)", ours ? @"the player's" : @"not the player's", ours,
+          presenter ? NSStringFromClass(presenter.class) : @"nothing");
+    return ours;
+}
+
+static UITableView *findTable(UIView *root, int depth) {
+    if ([root isKindOfClass:UITableView.class]) return (UITableView *)root;
+    if (depth > 5) return nil;
+    for (UIView *child in root.subviews) {
+        UITableView *table = findTable(child, depth + 1);
+        if (table) return table;
+    }
+    return nil;
+}
+
+static NSInteger rowCount(UITableView *table) {
+    NSInteger rows = 0;
+    for (NSInteger section = 0; section < table.numberOfSections; section++) rows += [table numberOfRowsInSection:section];
+    return rows;
+}
+
+static BOOL spinning(UIView *view, int depth) {
+    if ([view isKindOfClass:UIActivityIndicatorView.class]) return ((UIActivityIndicatorView *)view).isAnimating && !view.isHidden && view.alpha > 0.01;
+    if (depth > 6) return NO;
+    for (UIView *child in view.subviews) {
+        if (spinning(child, depth + 1)) return YES;
+    }
+    return NO;
+}
+
+static void noteRows(UIViewController *menu, UITableView *table) {
+    NSNumber *shownAt = objc_getAssociatedObject(menu, &kShownAtKey);
+    if (!shownAt || objc_getAssociatedObject(menu, &kRowsInKey) || !table || rowCount(table) == 0) return;
+    objc_setAssociatedObject(menu, &kRowsInKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    NSTimeInterval after = CACurrentMediaTime() - shownAt.doubleValue;
+    if (after > 0.5) SGLog(@"speed and pitch: Spotify's rows came in %.1f s after the menu appeared", after);
+}
+
+static void watchRows(UIViewController *menu) {
+    if (objc_getAssociatedObject(menu, &kShownAtKey)) return;
+    objc_setAssociatedObject(menu, &kShownAtKey, @(CACurrentMediaTime()), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    UITableView *table = findTable(menu.view, 0);
+    if (table && rowCount(table)) {
+        objc_setAssociatedObject(menu, &kRowsInKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        return;
+    }
+    __weak UIViewController *weakMenu = menu;
+    for (NSNumber *wait in @[@2, @6, @15, @40]) {
+        CFTimeInterval due = CACurrentMediaTime() + wait.doubleValue;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(wait.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            UIViewController *shown = weakMenu;
+            if (!shown.viewIfLoaded.window || objc_getAssociatedObject(shown, &kRowsInKey)) return;
+            UITableView *rows = findTable(shown.view, 0);
+            noteRows(shown, rows);
+            if (objc_getAssociatedObject(shown, &kRowsInKey)) return;
+            SGLog(@"speed and pitch: no rows of Spotify's %@ s after the menu appeared (this check ran %.2f s late), spinner %@, table %.0fx%.0f holding %.0f",
+                  wait, CACurrentMediaTime() - due, spinning(shown.view, 0) ? @"spinning" : @"not spinning",
+                  rows.bounds.size.width, rows.bounds.size.height, rows.contentSize.height);
+        });
+    }
+}
 
 #pragma mark - Helper para inyectar el botón contextual de portada animada
 
@@ -74,7 +145,7 @@ static UIMenu *buildPlayerMenuWithAnimatedOption(NSArray<UIMenuElement *> *exist
                                                      identifier:@"spotifyglass.animatedArtwork"
                                                         handler:^(UIAction *action) {
         BOOL newState = !isAnimatedOn;
-        SGSetFlag(SGKeyAnimatedCoversEnabled, newState);
+        SGSetFlagOverride(SGKeyAnimatedCoversEnabled, newState ? @YES : @NO);
         
         // Notificamos para alternar inmediatamente la portada animada en el reproductor
         [NSNotificationCenter.defaultCenter postNotificationName:@"spotifyglass.animatedArtworkDidChange" object:nil];
@@ -347,7 +418,6 @@ static NSString *pitchText(float pitch) {
     _follows.enabled = speedAllowed;
     _follows.alpha = _followsName.alpha = speedAllowed ? 1 : 0.4;
     
-    // Leemos directamente de la clave del mod
     _animated.on = SGFlag(SGKeyAnimatedCoversEnabled, YES);
     [self showValues];
 }
@@ -480,7 +550,7 @@ static NSString *pitchText(float pitch) {
 }
 
 - (void)animatedChanged {
-    SGSetFlag(SGKeyAnimatedCoversEnabled, _animated.on);
+    SGSetFlagOverride(SGKeyAnimatedCoversEnabled, _animated.on ? @YES : @NO);
     SGPlayFeedback(SGFeedbackDetent);
     [NSNotificationCenter.defaultCenter postNotificationName:@"spotifyglass.animatedArtworkDidChange" object:nil];
 }
