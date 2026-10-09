@@ -153,10 +153,14 @@ static NSString *playingLocalFile(void) {
 - (void)documentPicker:(UIDocumentPickerViewController *)picker didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     NSURL *url = urls.firstObject;
     if (!url) return;
-    if (![url.pathExtension.lowercaseString isEqualToString:@"lrc"]) {
-        showAlert(self, @"Not an LRC file", @"Pick a file whose name ends in .lrc.");
+    
+    // Validación para admitir archivos .lrc, .ttml o .xml
+    NSString *ext = url.pathExtension.lowercaseString;
+    if (![ext isEqualToString:@"lrc"] && ![ext isEqualToString:@"ttml"] && ![ext isEqualToString:@"xml"]) {
+        showAlert(self, @"Formato no soportado", @"Selecciona un archivo .lrc, .ttml o .xml.");
         return;
     }
+    
     NSError *error = nil;
     NSString *name = SGImportLRC(url, _linkTo, &error);
     if (!name) {
