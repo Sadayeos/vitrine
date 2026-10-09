@@ -2,12 +2,25 @@
 #import <objc/runtime.h>
 #import "Core/SGCore.h"
 
+// Interfaces para que el compilador conozca las propiedades e instancias nativas
+@interface SPTPlayerState : NSObject
+- (NSDictionary *)metadata;
+@end
+
+@interface SPTNowPlayingFooterUnitViewController : UIViewController
+@end
+
+@interface SPTLyricsDataLoader : NSObject
+- (id)sg_createFallbackLyricsWithText:(NSString *)text;
+@end
+
 #pragma mark - 1. Forzar que las pistas reporten tener letras disponibles
 
 %hook SPTPlayerState
 
 - (NSDictionary *)metadata {
-    NSMutableDictionary *meta = [%orig mutableCopy] ?: [NSMutableDictionary dictionary];
+    NSDictionary *origMeta = %orig;
+    NSMutableDictionary *meta = origMeta ? [origMeta mutableCopy] : [NSMutableDictionary dictionary];
     meta[@"has_lyrics"] = @"true";
     return meta;
 }
@@ -57,7 +70,7 @@
 - (void)fetchLyricsForTrackURI:(NSURL *)trackURI completion:(void (^)(id lyrics, NSError *error))completion {
     %orig(trackURI, ^(id lyrics, NSError *error) {
         if (!lyrics || error) {
-            id fallbackLyrics = [self sg_createFallbackLyricsWithText:@"Without lyrics"];
+            id fallbackLyrics = [self sg_createFallbackLyricsWithText:@"Without lyrics."];
             if (completion) {
                 completion(fallbackLyrics, nil);
             }
