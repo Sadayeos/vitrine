@@ -1,93 +1,193 @@
-// Moving artwork for a track: its Canvas, or Apple Music's animated album cover where the album has one,
-// and for the lock screen, failing both, the cover over a moving blur of itself (SGFluidClip.h).
-// SGMotionCatalog.m looks covers and logos up in Apple Music's catalog. SGMotionStore.m keeps every video
-// as a local file, the form the system's lock screen takes.
+#import <AVFoundation/AVFoundation.h>
 #import <UIKit/UIKit.h>
+#import <objc/runtime.h>
+#import "Core/SGCore.h"
+#import "AnimatedArtwork.h"
+#import "Headers/SPTPlayer.h"
 
-// What the lock screen fills the screen with, stored as the index of SGLockArtwork. It took over from the
-// Moving artwork switch, whose key is moved onto it once: on is Moving artwork, off is Off.
-#define SGKeyLockScreenArtwork @"spotifyglass.lockscreen.artwork"
-#define SGKeyLockScreenMotion @"spotifyglass.lockscreen.motion"
-typedef NS_ENUM(NSInteger, SGLockArtwork) {
-    SGLockArtworkOff = 0,
-    SGLockArtworkMotion,   // the Canvas, else Apple Music's animated cover (LockScreenMotion.x)
-    SGLockArtworkLyrics,   // a clip per line of lyrics (Shared/LockScreenLyrics/LyricsArtwork.x)
-    SGLockArtworkEverySong,   // Moving artwork, else the cover over a moving blur of it (LockScreenMotion.x)
-};
-// Off below iOS 26, which has no animated artwork on the lock screen.
-SGLockArtwork SGLockScreenArtwork(void);
-// How the lyrics are drawn, stored as the index of SGLyricsClipStyle (Still unless changed).
-#define SGKeyLockScreenLyricsStyle @"spotifyglass.lockscreen.lyricsStyle"
-// Off until switched on: download in Low Data Mode too.
-#define SGKeyMotionLowData @"spotifyglass.motion.lowdata"
+// Clave pública para la preferencia global
+extern NSString *const SGKeyAnimatedCoversEnabled;
 
-typedef NS_ENUM(NSInteger, SGMotionShape) {
-    SGMotionSquare,   // 1:1
-    SGMotionTall,     // 3:4
-};
+@interface SGAnimatedArtworkViewManager : NSObject
+@property (nonatomic, strong) AVQueuePlayer *player;
+@property (nonatomic, strong) AVPlayerLooper *looper;
+@property (nonatomic, strong) AVPlayerLayer *playerLayer;
+@property (nonatomic, weak) UIView *activeContainer;
+@property (nonatomic, strong) SGMotionFollower *follower;
+@property (nonatomic, copy) NSString *currentURI;
 
-// Apple Music's animated cover for an album, as a local file, or nil. `done` runs on the main queue.
-// `pixels` is the width it is shown at; the closest stream at or above it is downloaded.
-void SGMotionAlbumCover(NSString *artist, NSString *album, SGMotionShape shape, CGFloat pixels,
-                        void (^done)(NSURL *file));
-
-// The artist's logo from Apple Music, a transparent PNG `pixels` wide, or nil. Main queue.
-void SGMotionArtistLogo(NSString *artist, CGFloat pixels, void (^done)(UIImage *logo));
-
-// The width a full-screen clip is downloaded at: three quarters of the screen's pixels. A tall cover at the
-// screen's full width ran to 29 MB a song; at this width it was 7 MB and looks the same in motion.
-CGFloat SGMotionPixels(void);
-
-// Apple Music's catalog songs with this ISRC, each with its isrc, durationInMillis and hasHaptics, or nil
-// when the catalog could not be asked. Kept for the launch. Main queue.
-void SGMotionSongsWithISRC(NSString *isrc, void (^done)(NSArray *songs));
-
-// Where moving artwork comes from (MotionSources.m): the keys that are on, in the order they are asked,
-// Spotify's Canvas then Apple Music's animated cover unless the user changed it.
-#define SGKeyMotionSources @"spotifyglass.motion.sources"
-NSArray<NSString *> *SGMotionSourceOrder(void);
-BOOL SGMotionAppleMusicOn(void);
-// The track's Canvas video as its metadata names it (canvas.url, of a canvas.type that is a video), or nil.
-NSURL *SGMotionCanvasIn(NSDictionary *metadata);
-// The first clip the order finds for the track `uri`, as a local file, or nil, and the key of the source it
-// came from. `canvas` is the track's Canvas video, nil when its metadata names none, and then Spotify's
-// Canvas service is asked for it. Main queue.
-void SGMotionClipFor(NSString *uri, NSURL *canvas, NSString *artist, NSString *album, SGMotionShape shape, CGFloat pixels,
-                     void (^done)(NSURL *file, NSString *source));
-
-// Follows the player for one user of moving artwork, the lock screen or the redesign's player
-// (SGMotionFollower.m). Each track's sources are walked once, and again when its Canvas turns up in a later
-// state, as it does on a skip, where Spotify reports the track before its extended metadata, unless the clip
-// showing came from a source above Canvas. `begin` runs as a walk starts, to take the last clip off, and
-// says whether to walk at all; `found` gets the walk's clip, nil for none, and never runs for a walk a newer
-// one overtook. Once a walk has ended, the next track's clip is fetched ahead. Main queue.
-@class SPTPlayerState;
-@interface SGMotionFollower : NSObject
-- (instancetype)initWithBegin:(BOOL (^)(NSString *uri, SPTPlayerState *state))begin
-                        found:(void (^)(NSString *uri, NSURL *file))found;
-// The track is walked again from the player's last state: a setting it depends on changed.
-- (void)restart;
++ (instancetype)shared;
+- (void)attachToView:(UIView *)container videoURL:(NSURL *)fileURL;
+- (void)detach;
 @end
-// The row that opens the ordered list, for the Player page and the lock screen's.
-@class SGModRow;
-SGModRow *SGMotionSourcesRow(void);
 
-// Any remote video (a Canvas) as a local file, or nil. Main queue.
-void SGMotionFile(NSURL *remote, void (^done)(NSURL *file));
-// Where a video the mod makes itself is kept under `key`, among the downloads, which are kept to the
-// newest few. Whether it is there yet is the caller's to check. Any thread.
-NSURL *SGMotionMadeFile(NSString *key);
+@implementation SGAnimatedArtworkViewManager
 
-// The first frame of a local video. Main queue.
-void SGMotionPoster(NSURL *file, void (^done)(UIImage *poster));
++ (instancetype)shared {
+    static SGAnimatedArtworkViewManager *instance;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        instance = [SGAnimatedArtworkViewManager new];
+    });
+    return instance;
+}
 
-// Settings: what the lock screen shows, the lyrics' style and Low Data Mode; below iOS 26 the one row
-// SGLockScreenArtworkNeedsRow, which says the setting needs iOS 26 and, tapped, why.
-NSArray *SGLockScreenMotionRows(void);
-SGModRow *SGLockScreenArtworkNeedsRow(void);
+- (void)attachToView:(UIView *)container videoURL:(NSURL *)fileURL {
+    if (!container || !fileURL) {
+        [self detach];
+        return;
+    }
 
-// Pure steps, for the harness.
-NSString *SGMotionNameKey(NSString *name);
-NSString *SGMotionSearchName(NSString *name);
-NSString *SGMotionStreamIn(NSString *master, CGFloat pixels);
-NSString *SGMotionWholeFileIn(NSString *media);
+    // Si ya estamos reproduciendo exactamente este archivo en el mismo contenedor, solo ajustamos el marco
+    if (self.activeContainer == container && self.playerLayer && self.playerLayer.superlayer == container.layer) {
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
+        self.playerLayer.frame = container.bounds;
+        [CATransaction commit];
+        return;
+    }
+
+    [self detach];
+    self.activeContainer = container;
+
+    AVPlayerItem *item = [AVPlayerItem playerItemWithURL:fileURL];
+    self.player = [AVQueuePlayer queuePlayerWithItems:@[item]];
+    self.looper = [AVPlayerLooper playerLooperWithPlayer:self.player templateItem:item];
+
+    self.playerLayer = [AVPlayerLayer playerLayerWithPlayer:self.player];
+    self.playerLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
+    self.playerLayer.frame = container.bounds;
+
+    // Adaptación idéntica a Apple Music: Borde redondeado y recorte automático del recuadro
+    container.layer.cornerRadius = 12.0;
+    container.layer.masksToBounds = YES;
+    self.playerLayer.cornerRadius = 12.0;
+    self.playerLayer.masksToBounds = YES;
+
+    // Agregamos el playerLayer directamente como subcapa de la carátula
+    [container.layer addSublayer:self.playerLayer];
+    [self.player play];
+}
+
+- (void)detach {
+    if (self.player) {
+        [self.player pause];
+        self.player = nil;
+    }
+    self.looper = nil;
+    if (self.playerLayer) {
+        [self.playerLayer removeFromSuperlayer];
+        self.playerLayer = nil;
+    }
+    self.activeContainer = nil;
+}
+
+@end
+
+#pragma mark - Observer de Cambios de Estado y Redimensionamiento (Horizontal / Vertical)
+
+%hook UIView
+
+- (void)layoutSubviews {
+    %orig;
+
+    // Verificamos si la portada animada está encendida en las configuraciones
+    if (!SGFlag(SGKeyAnimatedCoversEnabled, YES)) {
+        [[SGAnimatedArtworkViewManager shared] detach];
+        return;
+    }
+
+    NSString *className = NSStringFromClass(self.class);
+    // Identificamos las clases contenedoras del artwork nativo de Spotify
+    if ([className containsString:@"SPTNowPlayingArtworkView"] ||
+        [className containsString:@"NowPlayingCoverArtView"] ||
+        [className containsString:@"ArtworkCell"]) {
+        
+        SGAnimatedArtworkViewManager *manager = [SGAnimatedArtworkViewManager shared];
+        if (manager.playerLayer && (manager.activeContainer == self || manager.activeContainer == nil)) {
+            manager.activeContainer = self;
+            if (manager.playerLayer.superlayer != self.layer) {
+                [self.layer addSublayer:manager.playerLayer];
+            }
+            // Mantenemos la capa reajustada instantáneamente al recuadro (soportando modo horizontal y letras)
+            [CATransaction begin];
+            [CATransaction setDisableActions:YES];
+            manager.playerLayer.frame = self.bounds;
+            [CATransaction commit];
+        }
+    }
+}
+
+- (void)didMoveToWindow {
+    %orig;
+    if (!self.window) {
+        SGAnimatedArtworkViewManager *manager = [SGAnimatedArtworkViewManager shared];
+        if (manager.activeContainer == self) {
+            [manager detach];
+        }
+    }
+}
+
+%end
+
+#pragma mark - Manejo de Pistas e Integración con SGMotionFollower
+
+%hook SPTNowPlayingModel
+
+- (void)player:(id)player stateDidChange:(SPTPlayerState *)state {
+    %orig;
+    
+    if (!SGFlag(SGKeyAnimatedCoversEnabled, YES)) {
+        [[SGAnimatedArtworkViewManager shared] detach];
+        return;
+    }
+
+    SGAnimatedArtworkViewManager *manager = [SGAnimatedArtworkViewManager shared];
+    
+    // Inicializamos el follower de movimiento si aún no está configurado
+    if (!manager.follower) {
+        manager.follower = [[SGMotionFollower alloc] initWithBegin:^BOOL(NSString *uri, SPTPlayerState *st) {
+            return SGFlag(SGKeyAnimatedCoversEnabled, YES);
+        } found:^(NSString *uri, NSURL *file) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (file) {
+                    [manager attachToView:manager.activeContainer videoURL:file];
+                } else {
+                    [manager detach];
+                }
+            });
+        }];
+    }
+}
+
+%end
+
+#pragma mark - Suscripción a la Notificación de Cambio de Estado (Menú Contextual)
+
+static void animatedArtworkDidChangeNotification(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        SGAnimatedArtworkViewManager *manager = [SGAnimatedArtworkViewManager shared];
+        if (!SGFlag(SGKeyAnimatedCoversEnabled, YES)) {
+            [manager detach];
+        } else if (manager.follower) {
+            [manager.follower restart];
+        }
+    });
+}
+
+%ctor {
+    %init;
+    
+    // Registrar el listener para actualizar en tiempo real al tocar el botón en el menú contextual
+    [NSNotificationCenter.defaultCenter addObserverForName:@"spotifyglass.animatedArtworkDidChange"
+                                                  object:nil
+                                                   queue:NSOperationQueue.mainQueue
+                                              usingBlock:^(NSNotification * _Nonnull note) {
+        SGAnimatedArtworkViewManager *manager = [SGAnimatedArtworkViewManager shared];
+        if (!SGFlag(SGKeyAnimatedCoversEnabled, YES)) {
+            [manager detach];
+        } else if (manager.follower) {
+            [manager.follower restart];
+        }
+    }];
+}
