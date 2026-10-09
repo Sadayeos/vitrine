@@ -95,7 +95,7 @@ static NSString *playingLocalFile(void) {
     if (path.section == 1) {
         UITableViewCell *cell = SGDequeueCell(table, @"import");
         if (path.row == SGLRCImportByName) {
-            SGFillCell(cell, @"Import LRC…", @"Matched by title and artist", nil, @"square.and.arrow.down");
+            SGFillCell(cell, @"LRC, TTML / XML", @"Matched by title and artist", nil, @"square.and.arrow.down");
         } else {
             NSString *uri = playingLocalFile();
             NSString *title = SGLocalFileInfo(uri)[@"title"] ?: @"The local file playing";
