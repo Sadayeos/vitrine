@@ -272,6 +272,10 @@ static SGRBarArtworkWatcher *sg_barWatcher;
 
 #pragma mark - landscape cover art layout
 
+// Declaramos la interfaz para que el compilador sepa que hereda de UIView
+@interface SPTNowPlayingCoverArtView : UIView
+@end
+
 %group SGRLandscapeCoverFix
 
 %hook SPTNowPlayingCoverArtView
@@ -279,15 +283,15 @@ static SGRBarArtworkWatcher *sg_barWatcher;
 - (void)layoutSubviews {
     %orig;
     
-    // Verificamos si la pantalla está en orientación horizontal (Landscape)
-    UIInterfaceOrientation orientation = [UIApplication sharedApplication].statusBarOrientation;
-    if (UIInterfaceOrientationIsLandscape(orientation)) {
-        UIView *superview = self.superview;
-        if (!superview) return;
-        
-        CGFloat containerHeight = superview.bounds.size.height;
-        CGFloat containerWidth = superview.bounds.size.width;
-        
+    UIView *superview = self.superview;
+    if (!superview) return;
+    
+    // Obtenemos las dimensiones para verificar si está en modo horizontal (Landscape)
+    CGFloat containerWidth = superview.bounds.size.width;
+    CGFloat containerHeight = superview.bounds.size.height;
+    
+    // Si el ancho es mayor que el alto, estamos en modo horizontal
+    if (containerWidth > containerHeight) {        
         // Calculamos un tamaño proporcional adecuado (hasta el 75% de la altura total)
         CGFloat targetSide = MIN(containerWidth * 0.40, containerHeight * 0.75);
         
@@ -295,7 +299,7 @@ static SGRBarArtworkWatcher *sg_barWatcher;
         frame.size.width = targetSide;
         frame.size.height = targetSide;
         
-        // Centrado vertical perfecto en el contenedor
+        // Centrado vertical exacto en el contenedor
         frame.origin.y = (containerHeight - targetSide) / 2.0;
         frame.origin.x = 24.0;
         
