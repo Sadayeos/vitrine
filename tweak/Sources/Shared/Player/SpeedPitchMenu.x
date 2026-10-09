@@ -9,8 +9,8 @@
 #import "Settings/SGModPage.h"
 #import "SpeedPitch.h"
 
-// Clave compartida para guardar la preferencia global de la portada animada
-NSString *const SGKeyAnimatedCoversEnabled = @"spotifyglass.animatedCovers.enabled";
+// Referencia a la clave externa declarada en SGModPage.m / SGFlagList.m
+extern NSString *const SGKeyAnimatedCoversEnabled;
 
 // A menu this soon after the more button's tap is the player's.
 static const NSTimeInterval kMenuAfterTap = 3;
