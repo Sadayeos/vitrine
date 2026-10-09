@@ -336,25 +336,34 @@ static SGLyricsTaskState *classify(NSURLSessionTask *task, NSURLResponse *respon
     return state;
 }
 
+static NSData *noLyricsPlaceholderBody(SGLyricsResult *chain) {
+    SGLyricsResult *placeholder = [SGLyricsResult new];
+    placeholder.texts = @[@"Without lyrics."];
+    placeholder.starts = @[@0];
+    placeholder.synced = NO;
+    placeholder.provider = @"Vitrine";
+    return pageBody(placeholder, nil);
+}
+
 // A donor 200 goes through only with lines to put in it: once Spotify has seen a 200 it cannot be
 // turned into "no lyrics", and the donor's own lines must never show.
 static void answerDonor(NSURLSessionDataTask *task, SGLyricsTaskState *state, SGLyricsResult *chain,
                         NSURLResponse *response, SGDisposition handler, SGForwardResponse forward) {
-    if (chain.texts.count) {
-        @synchronized (state) {
-            state.chain = chain;
-            state.body = [NSMutableData data];
-        }
-        forward(response, handler);
-        return;
+    // Si la búsqueda no trajo letras, inyectamos el mensaje personalizado en lugar de responder con un 404
+    if (!chain.texts.count) {
+        chain = [SGLyricsResult new];
+        chain.texts = @[@"Without lyrics."];
+        chain.starts = @[@0];
+        chain.synced = NO;
+        chain.provider = @"Vitrine";
     }
-    decide(state.track, chain, nil, YES, nil);
-    SGLog(@"lyrics: no source has lyrics for %@, it ends in a 404", state.track);
-    NSHTTPURLResponse *notFound = [[NSHTTPURLResponse alloc] initWithURL:urlOf(task) statusCode:404 HTTPVersion:@"HTTP/2.0" headerFields:nil];
-    answerAs(task, notFound);
-    forward(notFound, handler);
+    
+    @synchronized (state) {
+        state.chain = chain;
+        state.body = [NSMutableData data];
+    }
+    forward(response, handler);
 }
-
 // URLSession's handler waits until the body is in and Spotify's delegate has chosen, so none of the
 // server's own bytes can reach the delegate ahead of it.
 static void answerMissing(id delegate, NSURLSession *session, NSURLSessionDataTask *task, SGLyricsTaskState *state,
