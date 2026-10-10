@@ -2,7 +2,7 @@
 // framework (iOS 26, with the languages downloaded in the Translate app) and Apple Intelligence's language
 // model (iOS 26, on the iPhones that have it). Both are Swift only. Nothing leaves the phone.
 import Foundation
-import FoundationModels
+// import FoundationModels
 import NaturalLanguage
 import Translation
 import os
