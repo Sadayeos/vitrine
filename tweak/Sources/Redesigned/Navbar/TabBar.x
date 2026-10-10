@@ -254,7 +254,10 @@ void SGRShrinkTabTitles(UIView *bar) {
         SGRNavbarForgetTab();
         if (!self.holding) forwardTap(source);
     } else {
-        // Redirección para pestañas agregadas por la mod o con URIs de Spotify
+        // 1. Registra la pestaña personalizada como activa para que syncBar la respete
+        SGRNavbarSetLitTab(source);
+        
+        // 2. Redirección para pestañas agregadas por el mod o con URIs de Spotify
         NSString *uri = objc_getAssociatedObject(source, "SGRTabURIKey") ?: @"spotify:user:me:collection";
         if ([uri isEqualToString:@"spotify:collection:tracks"]) {
             uri = @"spotify:user:me:collection";
