@@ -51,11 +51,27 @@ static NSString *const adPaths[] = {
     @"/upgrade-component/", @"/marketing/", @"/home-ads/", @"/search-ads/",
 };
 
+// Esperanto service names use dot/underscore-separated identifiers as well as URL
+// path segments. A word-boundary regex alone would not split underscores. Match
+// whole ad/slot tokens after /esperanto/, never the "ad" inside load or metadata.
+static BOOL isEsperantoAd(NSString *path) {
+    NSRange marker = [path rangeOfString:@"/esperanto/"];
+    if (marker.location == NSNotFound) return NO;
+    static NSRegularExpression *tokens;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        tokens = [NSRegularExpression regularExpressionWithPattern:@"(?:^|[/._-])(?:ads?|slots?)(?=$|[/._-])"
+                                                          options:0 error:NULL];
+    });
+    NSString *route = [path substringFromIndex:NSMaxRange(marker)];
+    return [tokens firstMatchInString:route options:0 range:NSMakeRange(0, route.length)] != nil;
+}
+
 static BOOL isAd(NSURL *url, NSString *path) {
     for (size_t i = 0; i < sizeof(adPaths) / sizeof(adPaths[0]); i++) {
         if (has(path, adPaths[i])) return YES;
     }
-    if (has(path, @"/esperanto/") && (has(path, @"ad") || has(path, @"slot"))) return YES;
+    if (isEsperantoAd(path)) return YES;
     NSString *host = url.host.lowercaseString ?: @"";
     return has(host, @"doubleclick") || has(host, @"googlesyndication") || [host hasPrefix:@"aet."]
         || [@[@"ad.spotify.com", @"ads.spotify.com", @"aet.spotify.com"] containsObject:host];
@@ -101,6 +117,7 @@ static NSData *blockedReply(NSString *path) {
 static NSData *patched(NSURL *url, NSData *body) {
     NSString *path = url.path.lowercaseString ?: @"";
     if (isFeed(path)) return SGStripFeed(body);
+    SGAdBlockSawOne(@"Config rewrites");
     NSData *result = isBootstrap(path) ? SGPatchBootstrap(body) : SGPatchCustomize(body);
     if (!result) {
         SGLog(@"could not rewrite %@, passed through", path);
@@ -160,6 +177,7 @@ static void complete(id<NSURLSessionDataDelegate> delegate, NSURLSession *sessio
         finish(nil);
         return;
     }
+    SGAdBlockSawOne(@"Requests");
     switch (classify(url)) {
         case SGNetBlock:
             SGAdBlockCountOne(@"Requests");
@@ -228,6 +246,7 @@ static void complete(id<NSURLSessionDataDelegate> delegate, NSURLSession *sessio
     BOOL spotify = has(host, @"spotify") || has(host, @"spclient");
     if (spotify && elapsed() > 30 && (has(path, @"deletetoken") || has(path, @"signup/public") || has(path, @"pses/screenconfig")
                                       || isCustomize(path) || has(host, @"apresolve"))) {
+        SGAdBlockSawOne(@"Requests");
         SGAdBlockCountOne(@"Requests");
         SGLog(@"canceled %@%@ before it left", host, path);
         [self cancel];
