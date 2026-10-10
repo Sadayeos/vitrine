@@ -2,18 +2,16 @@
 // framework (iOS 26, with the languages downloaded in the Translate app) and Apple Intelligence's language
 // model (iOS 26, on the iPhones that have it). Both are Swift only. Nothing leaves the phone.
 import Foundation
-#if canImport(FoundationModels)
 import FoundationModels
-#endif
 import NaturalLanguage
-#if canImport(Translation)
 import Translation
-#endif
 import os
 
 @objc(SGOnDeviceTranslation)
 public final class SGOnDeviceTranslation: NSObject {
     private static let log = Logger(subsystem: "spotifyglass", category: "translation")
+    // The model asked fresh for each run of this many lines, so a long song stays inside its context, with room
+    // for this many tokens of answer a line: a model that runs on stops there instead of filling the context.
     private static let chunkLines = 12
     private static let tokensPerLine = 60
 
@@ -56,9 +54,11 @@ public final class SGOnDeviceTranslation: NSObject {
     // MARK: Translation framework
 
     @objc public static var translationAvailable: Bool {
+        if #available(iOS 26.0, *) { return true }
         return false
     }
 
+    // One translation per line, "" for a line with no words; or nil and why not.
     @objc public static func translate(_ lines: [String], to languageTag: String, done: @escaping ([String]?, String?) -> Void) {
         guard #available(iOS 26.0, *) else { return finish(done, nil, "Translating on this iPhone needs iOS 26.") }
         let target = Locale.Language(identifier: languageTag)
@@ -102,9 +102,9 @@ public final class SGOnDeviceTranslation: NSObject {
 
     // MARK: Apple Intelligence
 
-#if canImport(FoundationModels)
     @available(iOS 26.0, *)
     private static var model: SystemLanguageModel {
+        // Lyrics are often explicit: the guardrails for changing text the user already has, not for writing new.
         SystemLanguageModel(useCase: .general, guardrails: .permissiveContentTransformations)
     }
 
@@ -115,7 +115,7 @@ public final class SGOnDeviceTranslation: NSObject {
     }
 
     @objc public static func translateWithAppleIntelligence(_ lines: [String], to languageTag: String, song: String?, progress: @escaping ([String]) -> Void,
-                                                           done: @escaping ([String]?, String?) -> Void) {
+                                                            done: @escaping ([String]?, String?) -> Void) {
         guard #available(iOS 26.0, *) else { return finish(done, nil, "Apple Intelligence needs iOS 26.") }
         let language = name(Locale.Language(identifier: languageTag))
         // Only the lines given text ("" for those translated already or with no words), 12 to a batch. A batch
@@ -124,7 +124,7 @@ public final class SGOnDeviceTranslation: NSObject {
         let wanted = lines.indices.filter { !lines[$0].isEmpty }
         Task {
             var out = [String](repeating: "", count: lines.count)
-            var before: [(String, String)] = []
+            var before: [(String, String)] = []   // the batch just done, lines and translations, for the next one's sense
             var failure: Error?
             var translated = 0
             let started = Date()
@@ -219,6 +219,9 @@ public final class SGOnDeviceTranslation: NSObject {
         return "Apple Intelligence could not translate the song (\(error.localizedDescription))."
     }
 
+    // Exactly one string per line, held to the count by the schema rather than read out of free text. The batch
+    // before it comes along, already translated, so a sentence across the two reads as one and names, pronouns
+    // and tone stay as they were; it is context only and gets no answer.
     @available(iOS 26.0, *)
     private static func translateChunk(_ lines: [String], into language: String, song: String?, before: [(String, String)]) async throws -> [String] {
         let json = { (value: Any) in
@@ -260,14 +263,4 @@ public final class SGOnDeviceTranslation: NSObject {
         let answer = try await session.respond(to: context + "Translate: " + json(lines), schema: schema, options: options).content.value([String].self)
         return answer.count == lines.count ? answer : lines.indices.map { $0 < answer.count ? answer[$0] : "" }
     }
-#else
-    @objc public static func appleIntelligenceAvailable(_ languageTag: String) -> Bool {
-        return false
-    }
-
-    @objc public static func translateWithAppleIntelligence(_ lines: [String], to languageTag: String, song: String?, progress: @escaping ([String]) -> Void,
-                                                           done: @escaping ([String]?, String?) -> Void) {
-        finish(done, nil, "Apple Intelligence is not available on this build SDK.")
-    }
-#endif
 }
