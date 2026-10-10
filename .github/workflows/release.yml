@@ -35,26 +35,35 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-      
+
           echo "=== Xcode ==="
           xcodebuild -version
           xcode-select -p
-      
+
           echo "=== iOS SDK ==="
           SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
           echo "SDK seleccionado: $SDK_VERSION"
           xcrun --sdk iphoneos --show-sdk-path
-      
+
           SDK_MAJOR="${SDK_VERSION%%.*}"
           if (( SDK_MAJOR < 26 )); then
             echo "::error::Se necesita el SDK de iOS 26 o posterior."
             exit 1
           fi
-          
-      - name: Build
-        run: env -u MAKELEVEL gmake -C tweak clean package
 
-      # Upload the generated .deb as a downloadable build artifact
+      - name: Checkout Theos
+        uses: actions/checkout@v4
+        with:
+          repository: theos/theos
+          path: theos
+          submodules: recursive
+
+      - name: Install build tools
+        run: brew install make dpkg ldid
+
+      - name: Build
+        run: env -u MAKELEVEL make -C tweak clean package
+
       - name: Upload DEB Artifact
         uses: actions/upload-artifact@v4
         with:
