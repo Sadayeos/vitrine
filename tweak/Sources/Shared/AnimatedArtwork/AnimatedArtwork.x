@@ -6,6 +6,7 @@
 #import "Headers/SPTPlayer.h"
 
 extern NSString *const SGKeyAnimatedCoversEnabled;
+extern NSString *const SGKeyAnimatedCoversFullBrightness;
 
 @interface SGAnimatedArtworkViewManager : NSObject
 @property (nonatomic, strong) AVQueuePlayer *player;
@@ -30,6 +31,45 @@ extern NSString *const SGKeyAnimatedCoversEnabled;
     return instance;
 }
 
+// Aplica el degradado suave en la parte inferior para evitar líneas verticales estiradas
+- (void)applyGradientMaskToLayer:(CALayer *)layer bounds:(CGRect)bounds {
+    if (!layer || CGRectIsEmpty(bounds)) return;
+
+    CAGradientLayer *gradient = [CAGradientLayer layer];
+    gradient.frame = bounds;
+    
+    gradient.colors = @[
+        (id)[UIColor blackColor].CGColor,
+        (id)[UIColor blackColor].CGColor,
+        (id)[UIColor clearColor].CGColor
+    ];
+    
+    gradient.locations = @[@0.0, @0.6, @1.0];
+    gradient.startPoint = CGPointMake(0.5, 0.0);
+    gradient.endPoint = CGPointMake(0.5, 1.0);
+
+    layer.mask = gradient;
+}
+
+// Ajusta el brillo / oscurecimiento de la portada e interfaz de acuerdo a la preferencia
+- (void)applyBrightnessSettingsToContainer:(UIView *)container {
+    if (!container) return;
+
+    BOOL fullBrightness = SGFlag(@"spotifyglass.animatedCovers.fullBrightness", NO);
+
+    // Si la opción está encendida, quitamos la opacidad al playerLayer y ocultamos capas oscuras
+    if (self.playerLayer) {
+        self.playerLayer.opacity = fullBrightness ? 1.0f : 0.85f;
+    }
+
+    SGForEachView(container.superview ?: container, ^(UIView *v) {
+        NSString *className = NSStringFromClass(v.class);
+        if ([className containsString:@"DimmingView"] || [className containsString:@"OverlayView"] || [v.accessibilityIdentifier isEqualToString:@"SGDarkOverlay"]) {
+            v.alpha = fullBrightness ? 0.0f : 1.0f;
+        }
+    });
+}
+
 - (void)attachToView:(UIView *)container videoURL:(NSURL *)fileURL {
     if (!container || !fileURL) {
         [self detach];
@@ -40,6 +80,8 @@ extern NSString *const SGKeyAnimatedCoversEnabled;
         [CATransaction begin];
         [CATransaction setDisableActions:YES];
         self.playerLayer.frame = container.bounds;
+        [self applyGradientMaskToLayer:self.playerLayer bounds:container.bounds];
+        [self applyBrightnessSettingsToContainer:container];
         [CATransaction commit];
         return;
     }
@@ -55,22 +97,35 @@ extern NSString *const SGKeyAnimatedCoversEnabled;
     self.playerLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
     self.playerLayer.frame = container.bounds;
 
-    container.layer.cornerRadius = 12.0;
-    container.layer.masksToBounds = YES;
-    self.playerLayer.cornerRadius = 12.0;
-    self.playerLayer.masksToBounds = YES;
+    // Ocultamos la carátula estática nativa
+    SGForEachView(container, ^(UIView *v) {
+        if ([v isKindOfClass:UIImageView.class]) {
+            v.alpha = 0.0;
+        }
+    });
+
+    [self applyGradientMaskToLayer:self.playerLayer bounds:container.bounds];
+    [self applyBrightnessSettingsToContainer:container];
 
     [container.layer addSublayer:self.playerLayer];
     [self.player play];
 }
 
 - (void)detach {
+    if (self.activeContainer) {
+        SGForEachView(self.activeContainer, ^(UIView *v) {
+            if ([v isKindOfClass:UIImageView.class]) {
+                v.alpha = 1.0;
+            }
+        });
+    }
     if (self.player) {
         [self.player pause];
         self.player = nil;
     }
     self.looper = nil;
     if (self.playerLayer) {
+        self.playerLayer.mask = nil;
         [self.playerLayer removeFromSuperlayer];
         self.playerLayer = nil;
     }
@@ -100,9 +155,18 @@ extern NSString *const SGKeyAnimatedCoversEnabled;
             if (manager.playerLayer.superlayer != self.layer) {
                 [self.layer addSublayer:manager.playerLayer];
             }
+
+            SGForEachView(self, ^(UIView *v) {
+                if ([v isKindOfClass:UIImageView.class]) {
+                    v.alpha = 0.0;
+                }
+            });
+
             [CATransaction begin];
             [CATransaction setDisableActions:YES];
             manager.playerLayer.frame = self.bounds;
+            [manager applyGradientMaskToLayer:manager.playerLayer bounds:self.bounds];
+            [manager applyBrightnessSettingsToContainer:self];
             [CATransaction commit];
         }
     }
