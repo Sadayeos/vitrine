@@ -22,6 +22,7 @@
 
 static char kBarKey, kApartBarKey, kHostKey, kFadeKey;
 static __weak UIView *sg_stockBar;
+static __weak UIView *sg_customLitTab;
 static CGFloat sg_room, sg_glassHeight;   // see "room for the glass bar"
 // See "minimized". sg_keepApart holds the second bar on screen while the main one grows back under it.
 static BOOL sg_minimized, sg_keepApart;
@@ -251,11 +252,12 @@ void SGRShrinkTabTitles(UIView *bar) {
 
     UIView *source = self.sources[index];
     if (![NSStringFromClass(source.class) isEqualToString:@"SGRTabItemView"]) {
+        sg_customLitTab = nil;
         SGRNavbarForgetTab();
         if (!self.holding) forwardTap(source);
     } else {
-        // 1. Registra la pestaña personalizada como activa para que syncBar la respete
-        SGRNavbarSetLitTab(source);
+        // 1. Registra la pestaña personalizada localmente
+        sg_customLitTab = source;
         
         // 2. Redirección para pestañas agregadas por el mod o con URIs de Spotify
         NSString *uri = objc_getAssociatedObject(source, "SGRTabURIKey") ?: @"spotify:user:me:collection";
@@ -511,7 +513,7 @@ static void syncBar(UIView *stockBar) {
 
     BOOL hideLabels = SGHidden(SGRKeyNavbarHideLabels);
     SGRSystemTabBar *apartBar = objc_getAssociatedObject(stockBar, &kApartBarKey);
-    UIView *active = SGRNavbarLitTab();
+    UIView *active = sg_customLitTab ?: SGRNavbarLitTab();
     if (![sources containsObject:active]) active = nil;
     for (UIView *source in sources) if (!active && isActive(source)) active = source;
     active = active ?: selectedSource(bar) ?: selectedSource(apartBar);
