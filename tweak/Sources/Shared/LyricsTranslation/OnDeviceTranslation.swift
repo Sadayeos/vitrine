@@ -2,10 +2,16 @@
 // framework (iOS 26, with the languages downloaded in the Translate app) and Apple Intelligence's language
 // model (iOS 26, on the iPhones that have it). Both are Swift only. Nothing leaves the phone.
 import Foundation
-// import FoundationModels
 import NaturalLanguage
-import Translation
 import os
+
+#if canImport(Translation)
+import Translation
+#endif
+
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
 
 @objc(SGOnDeviceTranslation)
 public final class SGOnDeviceTranslation: NSObject {
@@ -54,12 +60,15 @@ public final class SGOnDeviceTranslation: NSObject {
     // MARK: Translation framework
 
     @objc public static var translationAvailable: Bool {
+        #if canImport(Translation)
         if #available(iOS 26.0, *) { return true }
+        #endif
         return false
     }
 
     // One translation per line, "" for a line with no words; or nil and why not.
     @objc public static func translate(_ lines: [String], to languageTag: String, done: @escaping ([String]?, String?) -> Void) {
+        #if canImport(Translation)
         guard #available(iOS 26.0, *) else { return finish(done, nil, "Translating on this iPhone needs iOS 26.") }
         let target = Locale.Language(identifier: languageTag)
         guard let source = sourceLanguage(lines, target: target) else { return finish(done, nil, "The song's language could not be told from its words.") }
@@ -98,9 +107,14 @@ public final class SGOnDeviceTranslation: NSObject {
                 }
             }
         }
+        #else
+        finish(done, nil, "Translation framework is not available on this build.")
+        #endif
     }
 
     // MARK: Apple Intelligence
+
+    #if canImport(FoundationModels)
 
     @available(iOS 26.0, *)
     private static var model: SystemLanguageModel {
@@ -263,4 +277,17 @@ public final class SGOnDeviceTranslation: NSObject {
         let answer = try await session.respond(to: context + "Translate: " + json(lines), schema: schema, options: options).content.value([String].self)
         return answer.count == lines.count ? answer : lines.indices.map { $0 < answer.count ? answer[$0] : "" }
     }
+
+    #else
+
+    @objc public static func appleIntelligenceAvailable(_ languageTag: String) -> Bool {
+        return false
+    }
+
+    @objc public static func translateWithAppleIntelligence(_ lines: [String], to languageTag: String, song: String?, progress: @escaping ([String]) -> Void,
+                                                            done: @escaping ([String]?, String?) -> Void) {
+        finish(done, nil, "Apple Intelligence is not available on this build.")
+    }
+
+    #endif
 }
