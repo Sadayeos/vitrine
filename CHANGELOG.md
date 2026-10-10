@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-beta.10](https://github.com/Sadayeos/vitrine/compare/v1.0.0-beta.9...v1.0.0-beta.10) (2026-10-10)
+
+
+### Fixes
+
+* a wider chosen font no longer breaks words mid-line ([0a395e6](https://github.com/Sadayeos/vitrine/commit/0a395e6276b60f7002add1ed7af3f9620b6ccbea)), closes [#14](https://github.com/Sadayeos/vitrine/issues/14)
+* the chosen font reaches all of Spotify's text, not just titles ([e9a9181](https://github.com/Sadayeos/vitrine/commit/e9a918119463f058e62e6d23b0ee7a74a3ae8530)), closes [#14](https://github.com/Sadayeos/vitrine/issues/14)
+
 ## [1.0.0-beta.9](https://github.com/My-Name-Is-Jeff/vitrine/compare/v1.0.0-beta.8...v1.0.0-beta.9) (2026-10-10)
 
 
