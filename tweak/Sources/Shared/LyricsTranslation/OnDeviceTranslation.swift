@@ -16,6 +16,7 @@ public final class SGOnDeviceTranslation: NSObject {
     // MARK: - Translation Framework
 
     @objc public static var translationAvailable: Bool {
+        if #available(iOS 26.0, *) { return true }
         return false
     }
 
@@ -26,6 +27,7 @@ public final class SGOnDeviceTranslation: NSObject {
     // MARK: - Apple Intelligence
 
     @objc public static func appleIntelligenceAvailable(_ languageTag: String) -> Bool {
+        if #available(iOS 26.0, *) { return true }
         return false
     }
 
